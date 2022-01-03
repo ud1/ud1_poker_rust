@@ -1,0 +1,17 @@
+[package]
+name = "ud1_poker_rust"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "1", features = ["macros", "sync", "rt-multi-thread"] }
+tokio-stream = "0.1"
+warp = "0.3"
+serde = {version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+futures-util = { version = "0.3", default-features = false }
+uuid = { version = "0.8", features = ["serde", "v4"] }
+configparser = "3"
+chrono = "0.4"

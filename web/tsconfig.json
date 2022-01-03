@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "es2018",
+    "module": "amd",
+    "moduleResolution": "node",
+    "isolatedModules": false,
+    "jsx": "react",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": false,
+    "useDefineForClassFields": true,
+    
+    "strict" : true,
+    "noImplicitReturns" : true,
+    
+    "declaration": false,
+    "removeComments": true,
+    "noFallthroughCasesInSwitch": true,
+    "noLib": false,
+    "preserveConstEnums": true,
+    "esModuleInterop": true,
+    "outDir": "../js",
+    "sourceMap": false,
+  },
+  "compileOnSave": true
+}
