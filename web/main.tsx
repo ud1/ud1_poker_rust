@@ -507,7 +507,7 @@ class AddStoriesDialog extends React.Component<{state: State}> {
                 <RB.Form>
                     <RB.Form.Group className="mb-3" controlId="userName">
                         <RB.Form.Label>Stories</RB.Form.Label>
-                        <RB.Form.Control as="textarea" rows={5} placeholder="Enter stories" value={state.storiesRawString} onChange={this.onChange} />
+                        <RB.Form.Control as="textarea" rows={15} placeholder="Enter stories" value={state.storiesRawString} onChange={this.onChange} />
                     </RB.Form.Group>
 
                     <RB.ListGroup variant="flush">
