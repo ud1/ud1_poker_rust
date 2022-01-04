@@ -358,7 +358,7 @@ async fn client_msg(user_id: &UserUuid, pub_user_uuid: &UserUuid, room_id: &Room
                 let story = room.stories.iter_mut().find(|s| s.story_uuid == message.story_uuid);
                 let user = room.users.get(user_id);
                 if let Some(story) = story {
-                    if story.state == StoryState::Voting {
+                    if story.state != StoryState::Finished {
                         if let Some(user) = user {
                             story.votes.insert(user.pub_user_uuid.clone(), message.vote);
                             send_stories_update_message(room);

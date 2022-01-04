@@ -734,6 +734,8 @@ class StoryItemComponent extends React.Component<{state: State, i: number}> {
             </a>
             {' '}
             {story.story.story_description || ''}
+            {' '}
+            {finished && story.final_vote != null && <RB.Badge bg="success">{story.final_vote}</RB.Badge>}
 
             {canSetActive &&<RB.Button size="sm" onClick={() => state.setActive()}>Make active</RB.Button>}
             {canDelete &&<RB.Button size="sm" variant="outline-secondary" className="mx-1" onClick={this.deleteStory}>Delete</RB.Button>}
