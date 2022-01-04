@@ -624,7 +624,7 @@ class Person extends React.Component<{state: State, user: UserUpdateMessage}> {
 
 @observer
 class Voters extends React.Component<{state: State}> {
-    onFinalVoteChange = (ev: React.ChangeEvent<HTMLInputElement>) => {
+    onFinalVoteChange = (ev: React.ChangeEvent<HTMLSelectElement>) => {
         this.props.state.setFinalVoteText(ev.target.value);
     }
 
@@ -658,7 +658,10 @@ class Voters extends React.Component<{state: State}> {
                 }
                 {canFinishVoting &&
                     <RB.InputGroup className="mb-3">
-                        <RB.Form.Control type="text" placeholder="Final vote" value={state.finalVoteText} onChange={this.onFinalVoteChange}/>
+                        <RB.Form.Select aria-label="Default select example" value={state.finalVoteText} onChange={this.onFinalVoteChange}>
+                            <option disabled={true} value="">Final vote</option>
+                            {state.vote_options.map((c, i) => <option key={c} value={c}>{c}</option>)}
+                        </RB.Form.Select>
                         <RB.Button disabled={!state.finalVoteText} size="sm" onClick={() => state.finishVoting()}>Finish</RB.Button>
                     </RB.InputGroup>                    
                 }
