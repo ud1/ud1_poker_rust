@@ -73,6 +73,7 @@ impl User {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 enum StoryState {
     Voting,
+    Flipped,
     Finished,
 }
 
@@ -90,6 +91,7 @@ struct Story {
     pub story_description: String,
     pub state: StoryState,
     pub votes: HashMap<UserUuid, Vote>,
+    pub final_vote: Option<f64>,
 }
 
 struct Room {
@@ -153,7 +155,8 @@ struct StoryUpdateMessage {
     pub story_uuid: StoryUuid,
     pub story: StoryItem,
     pub state: StoryState,
-    pub votes: HashMap<UserUuid, Vote>
+    pub votes: HashMap<UserUuid, Vote>,
+    pub final_vote: Option<f64>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -183,6 +186,12 @@ struct UsersUpdateMessage {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct FinishVotingMessage {
+    pub story_uuid: StoryUuid,
+    pub final_vote: f64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct ForceFlipMessage {
     pub story_uuid: StoryUuid
 }
 
@@ -227,7 +236,7 @@ fn send_users_update_message(room: &mut Room) {
 }
 
 fn compute_votes(story: &Story, users: &HashMap<UserUuid, User>, current_pub_user_id: &UserUuid) -> HashMap<UserUuid, Vote> {
-    let mut finished = story.state == StoryState::Finished;
+    let mut finished = story.state == StoryState::Finished || story.state == StoryState::Flipped;
     if !finished {
         finished = match users.iter().find(|(_, u)| u.role == UserRole::Voter && u.is_active && !story.votes.contains_key(&u.pub_user_uuid)) {
             Some(_) => false,
@@ -255,7 +264,8 @@ fn send_stories_update_message(room: &mut Room) {
                             story_description: s.story_description.clone()
                         },
                         state: s.state.clone(),
-                        votes: compute_votes(s, &room.users, &user.pub_user_uuid)
+                        votes: compute_votes(s, &room.users, &user.pub_user_uuid),
+                        final_vote: s.final_vote
                     }
                 }).collect(),
                 active_story: room.active_story.clone()
@@ -298,9 +308,10 @@ async fn client_msg(user_id: &UserUuid, pub_user_uuid: &UserUuid, room_id: &Room
                 if let Some(user) = room.users.get_mut(user_id) {
                     user.user_name = message.user_name;
                     user.role = message.role;
-                }
 
-                send_users_update_message(room);
+                    send_users_update_message(room);
+                    send_stories_update_message(room);
+                }
             }
             else {
                 eprintln!("Parse user error {}", message);
@@ -314,7 +325,8 @@ async fn client_msg(user_id: &UserUuid, pub_user_uuid: &UserUuid, room_id: &Room
                         story_url: story.story_url,
                         story_description: story.story_description,
                         state: StoryState::Voting,
-                        votes: HashMap::new()
+                        votes: HashMap::new(),
+                        final_vote: None
                     });
                 }
 
@@ -368,14 +380,39 @@ async fn client_msg(user_id: &UserUuid, pub_user_uuid: &UserUuid, room_id: &Room
             }
 
             if let Ok(message) = serde_json::from_str::<FinishVotingMessage>(&message["finish ".len()..]) {
-                let story = room.stories.iter_mut().find(|s| s.story_uuid == message.story_uuid);
-                if let Some(story) = story {
+                let story_index = room.stories.iter_mut().position(|s| s.story_uuid == message.story_uuid);
+                if let Some(story_index) = story_index {
+                    let story = &mut room.stories[story_index];
                     story.state = StoryState::Finished;
+                    story.final_vote = Some(message.final_vote);
+
+                    let next_story = room.stories[(story_index + 1)..].iter().find(|s| s.state != StoryState::Finished);
+                    if let Some(next_story) = next_story {
+                        room.active_story = Some(next_story.story_uuid.clone());
+                    }
+                    
                     send_stories_update_message(room);
                 }
             }
             else {
                 eprintln!("Parse finish error {}", message);
+            }
+        }
+        else if message.starts_with("flip ") {
+            if room.owner.as_ref() != Some(pub_user_uuid) {
+                eprintln!("Not an owner to flip");
+                return;
+            }
+
+            if let Ok(message) = serde_json::from_str::<ForceFlipMessage>(&message["flip ".len()..]) {
+                let story = room.stories.iter_mut().find(|s| s.story_uuid == message.story_uuid);
+                if let Some(story) = story {
+                    story.state = StoryState::Flipped;
+                    send_stories_update_message(room);
+                }
+            }
+            else {
+                eprintln!("Parse flip error {}", message);
             }
         }
         else if message.starts_with("active_story ") {
@@ -452,6 +489,7 @@ async fn client_connection(ws: WebSocket, user_id: UserUuid, room_id: RoomUuid, 
         }
 
         send_users_update_message(room);
+        send_stories_update_message(room);
     }
     println!("{:?} disconnected", user_id);
 }

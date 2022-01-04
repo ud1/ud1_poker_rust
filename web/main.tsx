@@ -55,12 +55,13 @@ interface AddStoriesMessage {
     stories: StoryItem[]
 }
 
-type StoryState = "Voting" | "Finished";
+type StoryState = "Voting" | "Flipped" | "Finished";
 interface StoryUpdateMessage {
     story_uuid: string,
     story: StoryItem,
     state: StoryState,
-    votes: {[key: string] : Vote}
+    votes: {[key: string] : Vote},
+    final_vote?: number,
 }
 
 interface StoriesUpdateMessage {
@@ -79,9 +80,14 @@ interface VoteMessage {
 
 interface FinishVotingMessage {
     story_uuid: string;
+    final_vote: number;
 }
 
 interface RemoveStoryMessage {
+    story_uuid: string;
+}
+
+interface ForceFlipMessage {
     story_uuid: string;
 }
 
@@ -308,6 +314,22 @@ class State {
     }
 
     @computed
+    get anyHiddenVote() {
+        let activeStory = this.activeStory;
+        if (!activeStory)
+            return false;
+
+        for (let k of Object.keys(activeStory.votes)) {
+            let vote = activeStory.votes[k];
+            if (vote == "Hidden") {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    @computed
     get selectedVote() {
         return this.activeStory?.votes[this.pubUserUuid]
     }
@@ -323,11 +345,15 @@ class State {
         }
     }
 
+    @action.bound
     finishVoting() {
         if (this.ws && this.myActiveStory) {
             let message: FinishVotingMessage = {
-                story_uuid: this.myActiveStory
+                story_uuid: this.myActiveStory,
+                final_vote: +this.finalVoteText
             }
+
+            this.finalVoteText = "";
 
             this.ws.send("finish " + JSON.stringify(message));
         }
@@ -340,6 +366,16 @@ class State {
             }
 
             this.ws.send("remove_story " + JSON.stringify(message));
+        }
+    }
+
+    forceFlip() {
+        if (this.ws && this.myActiveStory) {
+            let message: ForceFlipMessage = {
+                story_uuid: this.myActiveStory
+            }
+
+            this.ws.send("flip " + JSON.stringify(message));
         }
     }
 
@@ -391,6 +427,13 @@ class State {
     enterUserNameAndRoleDialog() {
         this.userNameInput = true;
     }
+
+    @action.bound
+    setFinalVoteText(finalVoteText: string) {
+        if (!isNaN(+finalVoteText)) {
+            this.finalVoteText = finalVoteText;
+        }
+    }
     
     @observable userNameInput = false;
     @observable addStoriesInput = false;
@@ -405,6 +448,7 @@ class State {
     @observable myActiveStory: string = "";
     @observable role: UserRole = "Voter";
     @observable roomCreationTime = ""
+    @observable finalVoteText = ""
 
     @observable storiesRawString: string = "";
 }
@@ -454,7 +498,7 @@ class AddStoriesDialog extends React.Component<{state: State}> {
     render() {
         let state = this.props.state;
 
-        return <RB.Modal show={state.addStoriesInput} onHide={state.hideAddStories}>
+        return <RB.Modal size="lg" show={state.addStoriesInput} onHide={state.hideAddStories}>
             <RB.Modal.Header closeButton>
                 <RB.Modal.Title>Add stories</RB.Modal.Title>
             </RB.Modal.Header>
@@ -506,7 +550,7 @@ class VoteOption extends React.Component<{state: State, vote : Vote}> {
 
         return <RB.Card bg={selected ? 'success' : ''} text={selected ? 'white' : undefined}
             className="text-center p-0 mx-1" onClick={disabled ? undefined : () => state.selectVote(this.props.vote)}>
-            <RB.Card.Body className="p-2" role={disabled ? undefined : "button"}>
+            <RB.Card.Body className={`p-2 ${disabled && !selected ? "text-muted" : ""}`} role={disabled ? undefined : "button"}>
                 {renderVote(this.props.vote)}
             </RB.Card.Body>
         </RB.Card>
@@ -517,10 +561,22 @@ class VoteOption extends React.Component<{state: State, vote : Vote}> {
 class VoteCards extends React.Component<{state: State}> {
     render() {
         let state = this.props.state;
+        let story = state.activeStory;
+        let ownerActive = story && state.ownerActiveStory == story.story_uuid;
+        let finished = story && story.state == "Finished";
         
-        return <RB.Card className="mb-2 mt-2">
+        return <RB.Card className="mb-2 mt-2" border={ownerActive ? "warning" : finished ? "success" : undefined}>
             <RB.Card.Header>Vote</RB.Card.Header>
             <RB.Card.Body>
+                {story && <>
+                    <RB.Card.Title>
+                        <a href={story.story.story_url || "#"} target="_blank">
+                            {story.story.story_url}
+                        </a>
+                    </RB.Card.Title>
+                    <RB.Card.Text>{story.story.story_description}</RB.Card.Text>
+                </>}
+                
                 <RB.Row>
                     {
                         state.vote_options.map((c, i) =>
@@ -550,32 +606,65 @@ class Person extends React.Component<{state: State, user: UserUpdateMessage}> {
         let story = state.activeStory;
         let vote = story?.votes[this.props.user.pub_user_uuid];
         let isMe = state.pubUserUuid == this.props.user.pub_user_uuid;
-        return <RB.ListGroup.Item disabled={!this.props.user.is_active}>
-            <span className={isMe ? "text-primary" : undefined}>{this.props.user.user_name}</span>
-            {' '}
+        let disabled = !this.props.user.is_active;
+        return <tr>
+            <td className="text-break">
+                <span className={isMe ? "text-primary" : disabled ? "text-muted" : undefined}>{this.props.user.user_name}</span>
+            </td>
+            <td>
             {vote &&
-                <RB.Badge bg="warning" text="dark">
+                <span className="fw-bold">
                     {renderVote(vote)}
-                </RB.Badge>
+                </span>
             }
-        </RB.ListGroup.Item>
+            </td>
+        </tr>
     }
 }
 
 @observer
 class Voters extends React.Component<{state: State}> {
+    onFinalVoteChange = (ev: React.ChangeEvent<HTMLInputElement>) => {
+        this.props.state.setFinalVoteText(ev.target.value);
+    }
+
     render() {
         let state = this.props.state;
         let mean = state.mean;
 
+        let activeStory = state.activeStory;
+        let isOwner = state.owner == state.pubUserUuid;
+        let canFinishVoting = isOwner && activeStory && (activeStory.state == "Voting" || activeStory.state == "Flipped");
+        let canFlip = isOwner && state.anyHiddenVote;
+
         return <RB.Card className="mb-2 mt-2">
             <RB.Card.Header>Voters</RB.Card.Header>
             <RB.Card.Body>
-                <RB.ListGroup variant="flush">
-                    {state.users.filter(u => u.role == "Voter").map(u => <Person key={u.pub_user_uuid} state={state} user={u}/>)}
-                </RB.ListGroup>
+                <RB.Table>
+                    <tbody>
+                        {state.users.filter(u => u.role == "Voter").map(u => <Person key={u.pub_user_uuid} state={state} user={u}/>)}
+                    </tbody>
+                </RB.Table>
 
-                {mean != null && <span>Mean: <RB.Badge bg="info" text="dark">{mean}</RB.Badge></span>}
+                {mean != null &&
+                    <p>
+                        <span>Mean: <RB.Badge bg="info" text="dark">{mean}</RB.Badge></span>
+                    </p>
+                }
+                {canFlip &&
+                    <p>
+                        <RB.Button variant="outline-secondary" size="sm" onClick={() => state.forceFlip()}>Force flip</RB.Button>
+                    </p>
+                }
+                {canFinishVoting &&
+                    <RB.InputGroup className="mb-3">
+                        <RB.Form.Control type="text" placeholder="Final vote" value={state.finalVoteText} onChange={this.onFinalVoteChange}/>
+                        <RB.Button disabled={!state.finalVoteText} size="sm" onClick={() => state.finishVoting()}>Finish</RB.Button>
+                    </RB.InputGroup>                    
+                }
+                {activeStory && activeStory.state == "Finished" &&
+                    <p>Final vote: <RB.Badge bg="success">{activeStory.final_vote}</RB.Badge></p>
+                }
             </RB.Card.Body>
         </RB.Card>;
     }
@@ -585,12 +674,18 @@ class Voters extends React.Component<{state: State}> {
 class Watchers extends React.Component<{state: State}> {
     render() {
         let state = this.props.state;
+        let watchers = state.users.filter(u => u.role == "Watcher");
+        if (!watchers.length)
+            return null;
+
         return <RB.Card className="mb-2">
             <RB.Card.Header>Watchers</RB.Card.Header>
             <RB.Card.Body>
-                <RB.ListGroup variant="flush">
-                    {state.users.filter(u => u.role == "Watcher").map(u => <Person key={u.pub_user_uuid} state={state} user={u}/>)}
-                </RB.ListGroup>
+                <RB.Table>
+                    <tbody>
+                        {watchers.map(u => <Person key={u.pub_user_uuid} state={state} user={u}/>)}
+                    </tbody>
+                </RB.Table>
             </RB.Card.Body>
         </RB.Card>;
     }
@@ -625,15 +720,15 @@ class StoryItemComponent extends React.Component<{state: State, i: number}> {
         let ownerActive = state.ownerActiveStory == story.story_uuid;
         let myActive = state.myActiveStory == story.story_uuid;
         let isOwner = state.owner == state.pubUserUuid;
-        let canFinishVoting = ownerActive && isOwner && story.state == "Voting";
         let finished = story.state == "Finished";
         let canSetActive = !finished && myActive && isOwner && story.story_uuid != state.ownerActiveStory;
         let canDelete = myActive && isOwner;
     
-        return <RB.ListGroup.Item variant={finished ? "success" : ownerActive ? "primary" : myActive ? "secondary" : ""}
-            className={myActive ? "fw-bold" : undefined}
+        return <RB.ListGroup.Item variant={finished ? "success" : ownerActive ? "warning" : myActive ? "secondary" : ""}
             role="button"
             onClick={() => state.selectMyActiveStory(story.story_uuid)}>
+            <b>{this.props.i + 1}</b>
+            {' '}
             <a href={story.story.story_url || "#"} target="_blank">
                 {story.story.story_url}
             </a>
@@ -641,7 +736,6 @@ class StoryItemComponent extends React.Component<{state: State, i: number}> {
             {story.story.story_description || ''}
 
             {canSetActive &&<RB.Button size="sm" onClick={() => state.setActive()}>Make active</RB.Button>}
-            {canFinishVoting &&<RB.Button size="sm" onClick={() => state.finishVoting()}>Finish</RB.Button>}
             {canDelete &&<RB.Button size="sm" variant="outline-secondary" className="mx-1" onClick={this.deleteStory}>Delete</RB.Button>}
         </RB.ListGroup.Item>
     }
