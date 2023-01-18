@@ -176,7 +176,8 @@ class State {
             history.replaceState(null, '', newUrl);
         }
 
-        var ws = new WebSocket(`ws://${window.location.host}/ws/${userUuid}/${roomUuid}`);
+        let proto = (window.location.protocol === "https:") ? "wss:" : "ws:";
+        let ws = new WebSocket(`${proto}//${window.location.host}/ws/${userUuid}/${roomUuid}`);
         ws.onopen = () => this.sendUserMessage();
 
         ws.onclose = (e) => {
