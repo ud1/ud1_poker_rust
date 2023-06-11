@@ -206,6 +206,7 @@ class State {
                     else if (e.data.startsWith("users ")) {
                         let message = JSON.parse(e.data.substring("users ".length)) as UsersUpdateMessage;
                         this.users = message.users;
+                        this.users.sort((a, b) => a.user_name.localeCompare(b.user_name));
                     }
                     else if (e.data.startsWith("stories ")) {
                         let message = JSON.parse(e.data.substring("stories ".length)) as StoriesUpdateMessage;
@@ -213,6 +214,10 @@ class State {
                         if (message.active_story && this.ownerActiveStory != message.active_story) {
                             this.ownerActiveStory = message.active_story;
                             this.myActiveStory = message.active_story;
+                        }
+
+                        if (!this.stories.length && this.owner == this.pubUserUuid) {
+                            this.openAddStoriesDialog();
                         }
                     }
                 });
@@ -465,8 +470,8 @@ class EnterUserNameDialog extends React.Component<{state: State}> {
     render() {
         let state = this.props.state;
 
-        return <RB.Modal show={state.userNameInput} onHide={state.onUserNameEntered}>
-            <RB.Modal.Header closeButton>
+        return <RB.Modal show={state.userNameInput}>
+            <RB.Modal.Header>
                 <RB.Modal.Title>Enter user name</RB.Modal.Title>
             </RB.Modal.Header>
 
@@ -486,6 +491,10 @@ class EnterUserNameDialog extends React.Component<{state: State}> {
                     </RB.ButtonGroup>
                 </RB.Form>
             </RB.Modal.Body>
+
+            <RB.Modal.Footer>
+                <RB.Button variant="primary" disabled={!state.userName} onClick={state.onUserNameEntered}>OK</RB.Button>
+            </RB.Modal.Footer>
         </RB.Modal>
     }
 }
@@ -607,10 +616,15 @@ class Person extends React.Component<{state: State, user: UserUpdateMessage}> {
         let story = state.activeStory;
         let vote = story?.votes[this.props.user.pub_user_uuid];
         let isMe = state.pubUserUuid == this.props.user.pub_user_uuid;
+        let isOwner = state.owner == this.props.user.pub_user_uuid;
         let disabled = !this.props.user.is_active;
+        let className = isMe ? "text-primary" : disabled ? "text-muted" : "";
+        if (isOwner)
+            className += " fw-bold";
+
         return <tr>
             <td className="text-break">
-                <span className={isMe ? "text-primary" : disabled ? "text-muted" : undefined}>{this.props.user.user_name}</span>
+                <span className={className}>{this.props.user.user_name}</span>
             </td>
             <td>
             {vote &&

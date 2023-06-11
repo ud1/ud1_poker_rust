@@ -330,6 +330,10 @@ async fn client_msg(user_id: &UserUuid, pub_user_uuid: &UserUuid, room_id: &Room
                     });
                 }
 
+                if room.active_story.is_none() && room.stories.len() > 0 {
+                    room.active_story = Some(room.stories[0].story_uuid.clone());
+                }
+
                 send_stories_update_message(room);
             }
             else {
@@ -478,7 +482,7 @@ async fn client_connection(ws: WebSocket, user_id: UserUuid, room_id: RoomUuid, 
                 break;
             }
         };
-        println!("{:?} connected", user_id);
+        println!("got msg from {:?}", user_id);
         client_msg(&user_id, &pub_user_uuid, &room_id, msg, &rooms).await;
     }
 
